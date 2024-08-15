@@ -66,6 +66,11 @@ class MIPMol:
 
         self.structural_feasibility()
 
+        # If one wants to exclude a large substructure,
+        # instead of adding too many constraints,
+        # put it into this list and check it in validation stage
+        self.check_later = []
+
     # basic constraints for structural feasibility
     def structural_feasibility(self):
         name = "structural feasibility"
@@ -341,8 +346,17 @@ class MIPMol:
             else:
                 raise ValueError("Invalid language for describing molecular patterns.")
             n = len(atom_list)
-            if math.comb(self.N_atoms, n) > 1e5:
-                raise ValueError("Too many constraints.")
+            if n * math.log10(self.N_atoms) > 5:
+                # If one wants to exclude a large substructure,
+                # instead of adding too many constraints,
+                # put it into this list and check it in validation stage
+                if language == "SMILES":
+                    mol = Chem.MolFromSmiles(substructure)
+                    Chem.Kekulize(mol)
+                else:
+                    mol = Chem.MolFromSmarts(substructure)
+                self.check_later.append(mol)
+                continue
 
             idx_list = [range(self.N_atoms) for _ in range(n)]
             for l in itertools.product(*idx_list):
@@ -433,6 +447,27 @@ class MIPMol:
                 expr += Y[i]
             self.m.addConstr(expr >= 0, name=f"include {substructure}")
 
+    # validation stage, remove:
+    # (i) duplicated molecules, and
+    # (ii) molecules with substructures in self.check_later
+    def validate(self, mols):
+        valid_mols = []
+        uni_smiles = {}
+        for mol in mols:
+            mol.UpdatePropertyCache()
+            smiles = Chem.MolToSmiles(mol)
+            if smiles in uni_smiles:
+                continue
+            uni_smiles[smiles] = True
+            valid = True
+            for pattern in self.check_later:
+                if mol.HasSubstructMatch(pattern):
+                    valid = False
+                    break
+            if valid:
+                valid_mols.append(mol)
+        return valid_mols
+
     # generate solutions within time limit for each batch
     def solve(self, NumSolutions=100, BatchSize=100, TimeLimit=100):
         mols = []
@@ -483,4 +518,4 @@ class MIPMol:
                             else:
                                 mol.AddBond(u, v, Chem.BondType.SINGLE)
                 mols.append(mol.GetMol())
-        return mols
+        return self.validate(mols)
