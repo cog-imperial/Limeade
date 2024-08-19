@@ -282,37 +282,17 @@ class MIPMol:
         if ub_ring is not None:
             self.m.addConstr(expr <= ub_ring, name="upper bound of rings")
 
-    # extract atom/bond/(explicit)hydrogen information from SMILES
-    def smiles_parser(self, smiles):
+    # extract atom/bond/(explicit)hydrogen information
+    def substructure_parser(self, substructure):
         atom_list = []
         bond_list = []
         hydrogen_list = []
-        mol = Chem.MolFromSmiles(smiles)
-        Chem.Kekulize(mol)
+        mol = Chem.MolFromSmarts(substructure)
         for atom in mol.GetAtoms():
-            atom_list.append([self.idx_atoms[atom.GetAtomicNum()]])
-            if atom.GetNumExplicitHs():
-                hydrogen_list.append(atom.GetNumExplicitHs())
-            else:
-                hydrogen_list.append(None)
-        for bond in mol.GetBonds():
-            bond_list.append(
-                [
-                    bond.GetBeginAtomIdx(),
-                    bond.GetEndAtomIdx(),
-                    int(bond.GetBondType()),
-                ]
-            )
-        return atom_list, bond_list, hydrogen_list
-
-    # extract atom/bond/(explicit)hydrogen information from SMARTS
-    def smarts_parser(self, smarts):
-        atom_list = []
-        bond_list = []
-        hydrogen_list = []
-        mol = Chem.MolFromSmarts(smarts)
-        # Chem.Kekulize(mol)
-        for atom in mol.GetAtoms():
+            if atom.GetIsAromatic():
+                raise ValueError(
+                    f"Aromaticity is not supported. Please kekulize substructure {substructure} first if you still want to use Limeade."
+                )
             atom_list.append([])
             hydrogen_list.append(None)
             queries = atom.DescribeQuery().split("\n")
@@ -336,28 +316,18 @@ class MIPMol:
             )
         return atom_list, bond_list, hydrogen_list
 
-    # exclude given substructures (list of SMILES/SMARTS)
-    def exclude_substructures(self, substructures, language="SMILES"):
+    # exclude given substructures
+    def exclude_substructures(self, substructures):
         for substructure in substructures:
-            if language == "SMILES":
-                atom_list, bond_list, hydrogen_list = self.smiles_parser(substructure)
-            elif language == "SMARTS":
-                atom_list, bond_list, hydrogen_list = self.smarts_parser(substructure)
-            else:
-                raise ValueError("Invalid language for describing molecular patterns.")
+            atom_list, bond_list, hydrogen_list = self.substructure_parser(substructure)
             n = len(atom_list)
-            if n * math.log10(self.N_atoms) > 5:
+            if n * math.log10(self.N_atoms) > 1e5:
                 # If one wants to exclude a large substructure,
                 # instead of adding too many constraints,
                 # put it into this list and check it in validation stage
-                if language == "SMILES":
-                    mol = Chem.MolFromSmiles(substructure)
-                    Chem.Kekulize(mol)
-                else:
-                    mol = Chem.MolFromSmarts(substructure)
+                mol = Chem.MolFromSmarts(substructure)
                 self.check_later.append(mol)
                 continue
-
             idx_list = [range(self.N_atoms) for _ in range(n)]
             for l in itertools.product(*idx_list):
                 if len(set(l)) < n:
@@ -392,16 +362,10 @@ class MIPMol:
                 expr -= M - 1
                 self.m.addConstr(expr <= 0, name=f"exclude {substructure}")
 
-    # include given substructures (list of SMILES\SMARTS)
-    def include_substructures(self, substructures, language="SMILES"):
+    # include given substructures
+    def include_substructures(self, substructures):
         for substructure in substructures:
-            if language == "SMILES":
-                atom_list, bond_list, hydrogen_list = self.smiles_parser(substructure)
-            elif language == "SMARTS":
-                atom_list, bond_list, hydrogen_list = self.smarts_parser(substructure)
-            else:
-                raise ValueError("Invalid language for describing molecular patterns.")
-
+            atom_list, bond_list, hydrogen_list = self.substructure_parser(substructure)
             n = len(atom_list)
             Y = []
             idx_Y = 0
@@ -486,7 +450,7 @@ class MIPMol:
             self.m.Params.TimeLimit = TimeLimit
             self.m.optimize()
             if self.m.Status == GRB.INFEASIBLE:
-                if len(self.m.getConstrs()) <= 100000:
+                if len(self.m.getConstrs()) <= 1e5:
                     self.m.computeIIS()
                     infeasible = {}
                     for c in self.m.getConstrs():
