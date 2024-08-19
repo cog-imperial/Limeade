@@ -29,15 +29,14 @@ Mol.bounds_rings(lb_r, ub_r)
 where `lb_db` (and `ub_db`) is the minimal (and maximal) number of double bonds, `lb_tb` (and `ub_tb`) is the minimal (and maximal) number of triple bonds, `lb_r` (and `ub_r`) is the minimal (and maximal) number of double rings.
 
 ## Include/Exclude substructures
-To include a given list of substructures in SMILES/SMARTS, run this command:
+To include a given list of SMARTS strings `substructures`, run this command:
 ```
-Mol.include_substructures(substructures, type)
+Mol.include_substructures(substructures)
 ```
-To exclude a given list of substructures in SMILES/SMARTS, run this command:
+To exclude a given list of SMARTS strings `substructures`, run this command:
 ```
-Mol.exclude_substructures(substructures, type)
+Mol.exclude_substructures(substructures)
 ```
-where `substructures` is a list of SMILES/SMARTS strings, `type` ("SMILES" or "SMARTS") specifies the type of strings.
 
 ## Generate molecules
 After providing all requirements using the aforementioned functionalities, to generate molecules satisfying those requirements, run this command:
