@@ -1,5 +1,7 @@
 import gurobipy as gp
 from gurobipy import GRB
+import pyomo.environ as pyo
+import pyomo.contrib.alternative_solutions as aos
 import numpy as np
 import math
 import itertools
@@ -10,8 +12,16 @@ from tqdm import tqdm
 
 
 class MIPMol:
-    def __init__(self, atoms, N_atoms):
+    def __init__(self, atoms, N_atoms, language="Gurobi"):
+        # only Gurobi and Pyomo are supported
+        if language not in ["Gurobi", "Pyomo"]:
+            raise ValueError(f"Modeling language {language} is not supported.")
+        self.language = language
+
+        # types of atoms
         self.atoms = atoms
+        # number of atoms
+        self.N_atoms = N_atoms
         # get the covalence of each type of atom
         self.covalences = []
         for atom in self.atoms:
@@ -20,10 +30,11 @@ class MIPMol:
                     Chem.rdchem.GetPeriodicTable(), Chem.Atom(atom).GetAtomicNum()
                 )
             )
-        # give the index of each type of atom in self.atoms
+        # the index of each type of atom in self.atoms
         self.idx_atoms = {}
         for idx, atom in enumerate(self.atoms):
             self.idx_atoms.setdefault(Chem.Atom(atom).GetAtomicNum(), idx)
+
         # number of types of atoms, indexed from 0 to len(atoms) - 1
         self.N_types = len(self.atoms)
         self.idx_types = range(0, self.N_types)
@@ -43,27 +54,10 @@ class MIPMol:
         # index of triple bond feature
         self.idx_triple_bond = self.N_features - 1
 
-        # print(self.covalences)
-        # print(self.idx_atoms)
-        # print(self.N_types, self.N_neighbors, self.N_hydrogens)
-        # print(self.N_features)
-        # print(self.idx_types, self.idx_neighbors, self.idx_hydrogens, self.idx_double_bond, self.idx_triple_bond)
+        # define model and variables
+        self.initialize_model()
 
-        self.N_atoms = N_atoms
-        self.m = gp.Model("MIP_CAMD")
-        self.X = self.m.addVars(
-            range(self.N_atoms), range(self.N_features), vtype=GRB.BINARY, name="X"
-        )
-        self.A = self.m.addVars(
-            range(self.N_atoms), range(self.N_atoms), vtype=GRB.BINARY, name="A"
-        )
-        self.DB = self.m.addVars(
-            range(self.N_atoms), range(self.N_atoms), vtype=GRB.BINARY, name="DB"
-        )
-        self.TB = self.m.addVars(
-            range(self.N_atoms), range(self.N_atoms), vtype=GRB.BINARY, name="TB"
-        )
-
+        # add structural constraints
         self.structural_feasibility()
 
         # If one wants to exclude a large substructure,
@@ -71,83 +65,130 @@ class MIPMol:
         # put it into this list and check it in validation stage
         self.check_later = []
 
+    # initialize model with dummy objective and variables for features
+    def initialize_model(self):
+        # create model and set objective as 0
+        if self.language == "Gurobi":
+            self.m = gp.Model()
+            self.m.setObjective(expr=0)
+        else:
+            self.m = pyo.ConcreteModel()
+            self.m.Obj = pyo.Objective(expr=0)
+            self.m.Con = pyo.ConstraintList()
+
+        # define variables for atom and bond features
+        N, F = self.N_atoms, self.N_features
+        self.add_variable([N, F], "X")
+        self.add_variable([N, N], "A")
+        self.add_variable([N, N], "DB")
+        self.add_variable([N, N], "TB")
+
+    # add variable given shape and name
+    def add_variable(self, shape, name):
+        assert len(shape) in [1, 2]
+        if self.language == "Gurobi":
+            if len(shape) == 1:
+                setattr(
+                    self, name, self.m.addVars(shape[0], vtype=GRB.BINARY, name=name)
+                )
+            else:
+                setattr(
+                    self,
+                    name,
+                    self.m.addVars(shape[0], shape[1], vtype=GRB.BINARY, name=name),
+                )
+        else:
+            if len(shape) == 1:
+                setattr(self.m, name, pyo.Var(range(shape[0]), within=pyo.Binary))
+            else:
+                setattr(
+                    self.m,
+                    name,
+                    pyo.Var(range(shape[0]), range(shape[1]), within=pyo.Binary),
+                )
+            setattr(self, name, getattr(self.m, name))
+
+    # add constraint given the expression and sense (<= or ==)
+    # for gurobi, we also include the name of this constraint for later use if the model is infeasible
+    def add_constraint(self, expr, sense, name):
+        if self.language == "Gurobi":
+            if sense == "==":
+                self.m.addConstr(expr == 0, name=name)
+            elif sense == "<=":
+                self.m.addConstr(expr <= 0, name=name)
+        else:
+            if sense == "==":
+                self.m.Con.add(expr == 0)
+            elif sense == "<=":
+                self.m.Con.add(expr <= 0)
+
     # basic constraints for structural feasibility
     def structural_feasibility(self):
         name = "structural feasibility"
-        # m.addConstr(A[0,0]==1)
-        # m.addConstr(A[1,1]==1)
-        # m.addConstr((m.A[v,v] >= m.A[v+1,v+1] for v in range(N_atoms-1)))
 
-        # assume that each atom exists
+        # (C1): assume that each atom exists
         for v in range(self.N_atoms):
-            self.m.addConstr(self.A[v, v] == 1, name=name)
+            self.add_constraint(self.A[v, v] - 1, "==", name)
 
-        # A is symmetric
+        # (C2): A is symmetric
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr(self.A[u, v] == self.A[v, u], name=name)
+                self.add_constraint(self.A[u, v] - self.A[v, u], "==", name)
 
-        # for v in range(self.N_atoms):
-        #    expr = (self.N_atoms - 1) * self.A[v,v]
-        #    for u in range(self.N_atoms):
-        #        if u != v:
-        #            expr -= self.A[u,v]
-        #    self.m.addConstr(expr >= 0)
-
-        # force connectivity of subgraphs induced by {0,1,...,v}
+        # (C3): force connectivity of subgraphs induced by {0,1,...,v}
         for v in range(1, self.N_atoms):
             expr = self.A[v, v]
             for u in range(v):
                 expr -= self.A[u, v]
-            self.m.addConstr(expr <= 0, name=name)
+            self.add_constraint(expr, "<=", name)
 
-        # no self double bond
+        # (C4): no self double bond
         for v in range(self.N_atoms):
-            self.m.addConstr((self.DB[v, v] == 0), name=name)
+            self.add_constraint(self.DB[v, v], "==", name)
 
-        # DB is symmetric
+        # (C5): DB is symmetric
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr((self.DB[u, v] == self.DB[v, u]), name=name)
+                self.add_constraint(self.DB[u, v] - self.DB[v, u], "==", name)
 
-        # no self triple bond
+        # (C6): no self triple bond
         for v in range(self.N_atoms):
-            self.m.addConstr((self.TB[v, v] == 0), name=name)
+            self.add_constraint(self.TB[v, v], "==", name)
 
-        # TB is symmetric
+        # (C7): TB is symmetric
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr((self.TB[u, v] == self.TB[v, u]), name=name)
+                self.add_constraint(self.TB[u, v] - self.TB[v, u], "==", name)
 
-        # a double/triple bond between u and v exists only when edge u-v exist
+        # (C8): a double/triple bond between u and v exists only when edge u-v exist
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr(
-                    (self.DB[u, v] + self.TB[u, v] <= self.A[u, v]), name=name
+                self.add_constraint(
+                    self.DB[u, v] + self.TB[u, v] - self.A[u, v], "<=", name
                 )
 
-        # force one and only one type to each atom
+        # (C9): force one and only one type to each atom
         for v in range(self.N_atoms):
             expr = self.A[v, v]
             for f in self.idx_types:
                 expr -= self.X[v, f]
-            self.m.addConstr(expr == 0, name=name)
+            self.add_constraint(expr, "==", name)
 
-        # force one and only one possible number of neighbors for each atom
+        # (C10): force one and only one possible number of neighbors for each atom
         for v in range(self.N_atoms):
             expr = self.A[v, v]
             for f in self.idx_neighbors:
                 expr -= self.X[v, f]
-            self.m.addConstr(expr == 0, name=name)
+            self.add_constraint(expr, "==", name)
 
-        # force one and only one possible number of hydrogens associated with each atom
+        # (C11): force one and only one possible number of hydrogens associated with each atom
         for v in range(self.N_atoms):
             expr = self.A[v, v]
             for f in self.idx_hydrogens:
                 expr -= self.X[v, f]
-            self.m.addConstr(expr == 0, name=name)
+            self.add_constraint(expr, "==", name)
 
-        # number of neighbors calculated from A or from X should match
+        # (C12): number of neighbors calculated from A or from X should match
         for v in range(self.N_atoms):
             expr = 0.0
             for u in range(self.N_atoms):
@@ -155,37 +196,31 @@ class MIPMol:
                     expr += self.A[u, v]
             for i in range(self.N_neighbors):
                 expr -= (i + 1) * self.X[v, self.idx_neighbors[i]]
-            self.m.addConstr(expr == 0, name=name)
+            self.add_constraint(expr, "==", name)
 
-        # a double bond between u and v exists when u and v are both associated with double bond and edge u-v exists
+        # (C13): a double bond between u and v exists when u and v are both associated with double bond and edge u-v exists
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr(
-                    (
-                        3.0 * self.DB[u, v]
-                        - self.X[u, self.idx_double_bond]
-                        - self.X[v, self.idx_double_bond]
-                        - self.A[u, v]
-                        <= 0
-                    ),
-                    name=name,
+                expr = (
+                    3.0 * self.DB[u, v]
+                    - self.X[u, self.idx_double_bond]
+                    - self.X[v, self.idx_double_bond]
+                    - self.A[u, v]
                 )
+                self.add_constraint(expr, "<=", name)
 
-        # a triple bond between u and v exists when u and v are both associated with triple bond and edge u-v exists
+        # (C14): a triple bond between u and v exists when u and v are both associated with triple bond and edge u-v exists
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
-                self.m.addConstr(
-                    (
-                        3.0 * self.TB[u, v]
-                        - self.X[u, self.idx_triple_bond]
-                        - self.X[v, self.idx_triple_bond]
-                        - self.A[u, v]
-                        <= 0
-                    ),
-                    name=name,
+                expr = (
+                    3.0 * self.TB[u, v]
+                    - self.X[u, self.idx_triple_bond]
+                    - self.X[v, self.idx_triple_bond]
+                    - self.A[u, v]
                 )
+                self.add_constraint(expr, "<=", name)
 
-        # maximal number of double bonds linked to each atom
+        # (C15): maximal number of double bonds linked to each atom
         for v in range(self.N_atoms):
             expr = 0.0
             for u in range(self.N_atoms):
@@ -193,17 +228,17 @@ class MIPMol:
                     expr += self.DB[u, v]
             for i in range(self.N_types):
                 expr -= (self.covalences[i] // 2) * self.X[v, self.idx_types[i]]
-            self.m.addConstr(expr <= 0, name=name)
+            self.add_constraint(expr, "<=", name)
 
-        # double bond feature for atom v is activated when there is at least one double bond between v and another atom
+        # (C16): double bond feature for atom v is activated when there is at least one double bond between v and another atom
         for v in range(self.N_atoms):
             expr = self.X[v, self.idx_double_bond]
             for u in range(self.N_atoms):
                 if u != v:
                     expr -= self.DB[u, v]
-            self.m.addConstr(expr <= 0, name=name)
+            self.add_constraint(expr, "<=", name)
 
-        # maximal number of triple bonds linked to each atom
+        # (C17): maximal number of triple bonds linked to each atom
         for v in range(self.N_atoms):
             expr = 0.0
             for u in range(self.N_atoms):
@@ -211,17 +246,17 @@ class MIPMol:
                     expr += self.TB[u, v]
             for i in range(self.N_types):
                 expr -= (self.covalences[i] // 3) * self.X[v, self.idx_types[i]]
-            self.m.addConstr(expr <= 0, name=name)
+            self.add_constraint(expr, "<=", name)
 
-        # triple bond feature for atom v is activated when there is at least one triple bond between v and another atom
+        # (C18): triple bond feature for atom v is activated when there is at least one triple bond between v and another atom
         for v in range(self.N_atoms):
             expr = self.X[v, self.idx_triple_bond]
             for u in range(self.N_atoms):
                 if u != v:
                     expr -= self.TB[u, v]
-            self.m.addConstr(expr <= 0, name=name)
+            self.add_constraint(expr, "<=", name)
 
-        # covalence equation
+        # (C19): covalence equation
         for v in range(self.N_atoms):
             expr = 0.0
             for i in range(self.N_types):
@@ -236,57 +271,62 @@ class MIPMol:
             for u in range(self.N_atoms):
                 if u != v:
                     expr -= 2.0 * self.TB[u, v]
-            self.m.addConstr(expr == 0, name=name)
+            self.add_constraint(expr, "==", name)
 
-    # set bounds for each type of atom
+    # (C20): set bounds for each type of atom
     def bounds_atoms(self, lb, ub):
         for i in range(self.N_types):
             expr = 0.0
             for v in range(self.N_atoms):
                 expr += self.X[v, self.idx_types[i]]
             if lb[i] is not None:
-                self.m.addConstr(expr >= lb[i], name=f"lower bound of {self.atoms[i]}")
+                self.add_constraint(
+                    lb[i] - expr, "<=", name=f"lower bound of {self.atoms[i]}"
+                )
             if ub[i] is not None:
-                self.m.addConstr(expr <= ub[i], name=f"upper bound of {self.atoms[i]}")
+                self.add_constraint(
+                    expr - ub[i], "<=", name=f"upper bound of {self.atoms[i]}"
+                )
 
-    # set bounds for number of double bonds
+    # (C21): set bounds for number of double bonds
     def bounds_double_bonds(self, lb_db=None, ub_db=None):
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
                 expr += self.DB[u, v]
         if lb_db is not None:
-            self.m.addConstr(expr >= lb_db, name="lower bound of double bonds")
+            self.add_constraint(lb_db - expr, "<=", name="lower bound of double bonds")
         if ub_db is not None:
-            self.m.addConstr(expr <= ub_db, name="upper bound of double bonds")
+            self.add_constraint(expr - ub_db, "<=", name="upper bound of double bonds")
 
-    # set bounds for number of triple bonds
+    # (C22): set bounds for number of triple bonds
     def bounds_triple_bonds(self, lb_tb=None, ub_tb=None):
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
                 expr += self.TB[u, v]
         if lb_tb is not None:
-            self.m.addConstr(expr >= lb_tb, name="lower bound of triple bonds")
+            self.add_constraint(lb_tb - expr, "<=", name="lower bound of triple bonds")
         if ub_tb is not None:
-            self.m.addConstr(expr <= ub_tb, name="upper bound of triple bonds")
+            self.add_constraint(expr - ub_tb, "<=", name="upper bound of triple bonds")
 
-    # set bounds for number of rings
+    # (C23): set bounds for number of rings
     def bounds_rings(self, lb_ring=None, ub_ring=None):
         expr = -(self.N_atoms - 1)
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
                 expr += self.A[u, v]
         if lb_ring is not None:
-            self.m.addConstr(expr >= lb_ring, name="lower bound of rings")
+            self.add_constraint(lb_ring - expr, "<=", name="lower bound of rings")
         if ub_ring is not None:
-            self.m.addConstr(expr <= ub_ring, name="upper bound of rings")
+            self.add_constraint(expr - ub_ring, "<=", name="upper bound of rings")
 
-    # extract atom/bond/(explicit)hydrogen information
+    # extract atom/bond/(explicit)hydrogen/degree information for a SMARTS string
     def substructure_parser(self, substructure):
         atom_list = []
         bond_list = []
         hydrogen_list = []
+        degree_list = []
         mol = Chem.MolFromSmarts(substructure)
         for atom in mol.GetAtoms():
             if atom.GetIsAromatic():
@@ -295,15 +335,19 @@ class MIPMol:
                 )
             atom_list.append([])
             hydrogen_list.append(None)
+            degree_list.append(None)
             queries = atom.DescribeQuery().split("\n")
             for query in queries:
                 words = query.split(" ")
                 if "AtomType" in words:
-                    temp = int(words[words.index("AtomType") + 1])
-                    atom_list[-1].append(self.idx_atoms[temp])
+                    temp_atom = int(words[words.index("AtomType") + 1])
+                    atom_list[-1].append(self.idx_atoms[temp_atom])
                 elif "AtomHCount" in words:
-                    temp = int(words[words.index("AtomHCount") + 1])
-                    hydrogen_list[-1] = temp
+                    temp_hydrogen = int(words[words.index("AtomHCount") + 1])
+                    hydrogen_list[-1] = temp_hydrogen
+                elif "AtomTotalDegree" in words:
+                    temp_degree = int(words[words.index("AtomTotalDegree") + 1])
+                    degree_list[-1] = temp_degree
             if not len(atom_list[-1]):
                 atom_list[-1] = list(range(self.N_types))
         for bond in mol.GetBonds():
@@ -314,12 +358,14 @@ class MIPMol:
                     int(bond.GetBondType()),
                 ]
             )
-        return atom_list, bond_list, hydrogen_list
+        return atom_list, bond_list, hydrogen_list, degree_list
 
     # exclude given substructures
     def exclude_substructures(self, substructures):
         for substructure in substructures:
-            atom_list, bond_list, hydrogen_list = self.substructure_parser(substructure)
+            atom_list, bond_list, hydrogen_list, degree_list = self.substructure_parser(
+                substructure
+            )
             n = len(atom_list)
             if n * math.log10(self.N_atoms) > 1e5:
                 # If one wants to exclude a large substructure,
@@ -342,6 +388,10 @@ class MIPMol:
                     if hydrogen_list[i] is not None:
                         expr += self.X[l[i], self.idx_hydrogens[hydrogen_list[i]]]
                         M += 1
+                        if degree_list[i] is not None:
+                            neighbor = degree_list[i] - hydrogen_list[i]
+                            expr += self.X[l[i], self.idx_neighbors[neighbor - 1]]
+                            M += 1
                 for bond in bond_list:
                     u, v, bond_type = bond[0], bond[1], bond[2]
                     if bond_type == 0:
@@ -360,22 +410,26 @@ class MIPMol:
                         raise ValueError("Invalid bond type.")
                     M += 1
                 expr -= M - 1
-                self.m.addConstr(expr <= 0, name=f"exclude {substructure}")
+                self.add_constraint(expr, "<=", name=f"exclude {substructure}")
 
     # include given substructures
     def include_substructures(self, substructures):
         for substructure in substructures:
-            atom_list, bond_list, hydrogen_list = self.substructure_parser(substructure)
+            atom_list, bond_list, hydrogen_list, degree_list = self.substructure_parser(
+                substructure
+            )
             n = len(atom_list)
-            Y = []
-            idx_Y = 0
+
+            A = {}
+            for bond in bond_list:
+                u, v = bond[0], bond[1]
+                if u > v:
+                    u, v = v, u
+                A[(u, v)] = True
+            self.add_variable([self.N_atoms - n], f"Y[{substructure}]")
+            Y = getattr(self, f"Y[{substructure}]")
             for k in range(self.N_atoms - n):
-                Y.append(
-                    self.m.addVar(
-                        vtype=GRB.BINARY, name="Y[%s,%d]" % (substructure, idx_Y)
-                    )
-                )
-                idx_Y += 1
+
                 # big-M coefficient
                 M = 0
                 expr = 0
@@ -386,6 +440,10 @@ class MIPMol:
                     if hydrogen_list[i]:
                         expr += self.X[i + k, self.idx_hydrogens[hydrogen_list[i]]]
                         M += 1
+                        if degree_list[i] is not None:
+                            neighbor = degree_list[i] - hydrogen_list[i]
+                            expr += self.X[i + k, self.idx_neighbors[neighbor - 1]]
+                            M += 1
                 for bond in bond_list:
                     u, v, bond_type = bond[0] + k, bond[1] + k, bond[2]
                     # any bond
@@ -404,12 +462,17 @@ class MIPMol:
                     else:
                         raise ValueError("Invalid bond type.")
                     M += 1
-                expr -= Y[-1] * M
-                self.m.addConstr(expr >= 0, name=f"include {substructure}")
+                for u in range(n):
+                    for v in range(u + 1, n):
+                        if (u, v) not in A:
+                            expr += 1 - self.A[u + k, v + k]
+                            M += 1
+                expr -= Y[k] * M
+                self.add_constraint(-expr, "<=", name=f"include {substructure}")
             expr = -1.0
-            for i in range(idx_Y):
+            for i in range(self.N_atoms - n):
                 expr += Y[i]
-            self.m.addConstr(expr >= 0, name=f"include {substructure}")
+            self.add_constraint(-expr, "<=", name=f"include {substructure}")
 
     # validation stage, remove:
     # (i) duplicated molecules, and
@@ -420,10 +483,12 @@ class MIPMol:
         for mol in mols:
             mol.UpdatePropertyCache()
             smiles = Chem.MolToSmiles(mol)
+            # check symmetry
             if smiles in uni_smiles:
                 continue
             uni_smiles[smiles] = True
             valid = True
+            # check substructures that are not represented as constraints
             for pattern in self.check_later:
                 if mol.HasSubstructMatch(pattern):
                     valid = False
@@ -432,23 +497,32 @@ class MIPMol:
                 valid_mols.append(mol)
         return valid_mols
 
-    # generate solutions within time limit for each batch
-    def solve(self, NumSolutions=100, BatchSize=100, TimeLimit=100):
+    # generate solutions within time limit for each batch using Gurobi
+    def solve(self, NumSolutions, BatchSize=100, TimeLimit=600):
+        tic = time.time()
         mols = []
+        # number of batches needed
         Batch = NumSolutions // BatchSize + (NumSolutions % BatchSize != 0)
+        self.m.update()
         for batch in tqdm(range(Batch)):
+            # number of solutions needed for this batch
+            PoolSolutions = (
+                BatchSize
+                if batch < Batch - 1
+                else NumSolutions - (Batch - 1) * BatchSize
+            )
+            # set hyperparameters
             self.m.reset()
             self.m.resetParams()
             self.m.Params.OutputFlag = False
-            self.m.Params.Seed = batch
             self.m.Params.PoolSearchMode = 2
-            PoolSolutions = BatchSize
-            if batch == Batch - 1:
-                PoolSolutions = NumSolutions - (Batch - 1) * BatchSize
             self.m.Params.PoolSolutions = PoolSolutions
-            self.m.Params.SolutionNumber = PoolSolutions
             self.m.Params.TimeLimit = TimeLimit
+            self.m.Params.Seed = batch
+            # solve the model
             self.m.optimize()
+
+            # infeasibility information
             if self.m.Status == GRB.INFEASIBLE:
                 if len(self.m.getConstrs()) <= 1e5:
                     self.m.computeIIS()
@@ -463,12 +537,13 @@ class MIPMol:
                 else:
                     print("Infeasible model.")
                 return []
-            N, F = self.N_atoms, self.N_features
-            for idx in range(self.m.Params.PoolSolutions):
+
+            # construct molecules from solutions
+            for idx in range(self.m.SolCount):
                 self.m.Params.SolutionNumber = idx
                 mol = AllChem.EditableMol(Chem.MolFromSmiles(""))
-                for v in range(N):
-                    for f in range(F):
+                for v in range(self.N_atoms):
+                    for f in range(self.N_features):
                         if np.rint(self.X[v, f].Xn):
                             mol.AddAtom(Chem.Atom(self.atoms[f]))
                             break
@@ -482,4 +557,67 @@ class MIPMol:
                             else:
                                 mol.AddBond(u, v, Chem.BondType.SINGLE)
                 mols.append(mol.GetMol())
-        return self.validate(mols)
+        toc = time.time()
+        valid_mols = self.validate(mols)
+        print(f"{len(mols)} molecules are generated after {round(toc-tic, 2)} seconds.")
+        print(
+            f"There are {len(valid_mols)} molecules left after removing symmetric and invalid molecules."
+        )
+        return valid_mols
+
+    # generate solutions within time limit for each batch using Pyomo specified a solver
+    def solve_pyomo(
+        self, NumSolutions, BatchSize=100, solver="cplex_direct", solver_options={}
+    ):
+        tic = time.time()
+        mols = []
+        # number of batches needed
+        Batch = NumSolutions // BatchSize + (NumSolutions % BatchSize != 0)
+        for batch in tqdm(range(Batch)):
+            # number of solutions needed for this batch
+            PoolSolutions = (
+                BatchSize
+                if batch < Batch - 1
+                else NumSolutions - (Batch - 1) * BatchSize
+            )
+            # solve the model
+            m = self.m.create_instance()
+            try:
+                sols = aos.enumerate_binary_solutions(
+                    m,
+                    num_solutions=PoolSolutions,
+                    search_mode="random",
+                    solver=solver,
+                    solver_options=solver_options,
+                    seed=batch,
+                )
+            except:
+                print("Infeasible model.")
+                return []
+            # construct molecules from solutions
+            for sol in sols:
+                mol = AllChem.EditableMol(Chem.MolFromSmiles(""))
+                for v in range(self.N_atoms):
+                    for f in range(self.N_features):
+                        if np.rint(sol.get_variable_name_values()[f"X[{v},{f}]"]):
+                            mol.AddAtom(Chem.Atom(self.atoms[f]))
+                            break
+                for u in range(self.N_atoms):
+                    for v in range(u + 1, self.N_atoms):
+                        if np.rint(sol.get_variable_name_values()[f"A[{u},{v}]"]):
+                            if np.rint(sol.get_variable_name_values()[f"DB[{u},{v}]"]):
+                                mol.AddBond(u, v, Chem.BondType.DOUBLE)
+                            elif np.rint(
+                                sol.get_variable_name_values()[f"TB[{u},{v}]"]
+                            ):
+                                mol.AddBond(u, v, Chem.BondType.TRIPLE)
+                            else:
+                                mol.AddBond(u, v, Chem.BondType.SINGLE)
+                mols.append(mol.GetMol())
+        toc = time.time()
+        valid_mols = self.validate(mols)
+        print(f"{len(mols)} molecules are generated after {round(toc-tic, 2)} seconds.")
+        print(
+            f"There are {len(valid_mols)} molecules left after removing symmetric and invalid molecules."
+        )
+        return valid_mols
