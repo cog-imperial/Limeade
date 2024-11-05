@@ -3,7 +3,7 @@
 This repository is the official implementation of the paper “Limeade: Let integer molecular encoding aid”.
 
 ## Documentation
-Much of the current functionality is demonstrated using Jupyter notebooks available in the notebooks folder.
+Most functionalities are demonstrated using Jupyter notebooks available in the notebooks folder.
 
 
 ## Basic settings
@@ -46,6 +46,6 @@ mols = Mol.solve(NumSolutions)
 where `NumSolutions` is the number of generated molecules.
 
 ## Contributors
-[*Shiqiang Zhang*](https://github.com/zshiqiang). Funded by an Imperial College Hans Rausing PhD Scholarship.
+[*Shiqiang Zhang*](https://github.com/zshiqiang). Funded by BASF SE Ludwigshafen am Rhei.
 
-[Christian Feldmann](https://github.com/c-w-feldmann). Funded by BASF SE.
+[*Christian Feldmann*](https://github.com/c-w-feldmann). Funded by BASF SE Ludwigshafen am Rhei.
