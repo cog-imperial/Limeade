@@ -367,12 +367,11 @@ class MIPMol:
                 substructure
             )
             n = len(atom_list)
-            if n * math.log10(self.N_atoms) > 1e5:
+            if n * math.log10(self.N_atoms) > 5:
                 # If one wants to exclude a large substructure,
                 # instead of adding too many constraints,
                 # put it into this list and check it in validation stage
-                mol = Chem.MolFromSmarts(substructure)
-                self.check_later.append(mol)
+                self.check_later.append(substructure)
                 continue
             idx_list = [range(self.N_atoms) for _ in range(n)]
             for l in itertools.product(*idx_list):
@@ -489,7 +488,8 @@ class MIPMol:
             uni_smiles[smiles] = True
             valid = True
             # check substructures that are not represented as constraints
-            for pattern in self.check_later:
+            for substructure in self.check_later:
+                pattern = Chem.MolFromSmarts(substructure)
                 if mol.HasSubstructMatch(pattern):
                     valid = False
                     break
@@ -499,6 +499,10 @@ class MIPMol:
 
     # generate solutions within time limit for each batch using Gurobi
     def solve(self, NumSolutions, BatchSize=100, TimeLimit=600):
+        if self.language != "Gurobi":
+            raise ValueError(
+                "Please use self.solve_pyomo when the modeling language is Pyomo."
+            )
         tic = time.time()
         mols = []
         # number of batches needed
@@ -569,6 +573,10 @@ class MIPMol:
     def solve_pyomo(
         self, NumSolutions, BatchSize=100, solver="cplex_direct", solver_options={}
     ):
+        if self.language != "Pyomo":
+            raise ValueError(
+                "Please use self.solve when the modeling language is Gurobi."
+            )
         tic = time.time()
         mols = []
         # number of batches needed
