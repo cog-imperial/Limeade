@@ -1,13 +1,14 @@
-import gurobipy as gp
-from gurobipy import GRB
-import pyomo.environ as pyo
-import pyomo.contrib.alternative_solutions as aos
-import numpy as np
-import math
 import itertools
+import math
+import time
+
+import gurobipy as gp
+import numpy as np
+import pyomo.contrib.alternative_solutions as aos
+import pyomo.environ as pyo
+from gurobipy import GRB
 from rdkit import Chem
 from rdkit.Chem import AllChem, Draw
-import time
 from tqdm import tqdm
 
 
