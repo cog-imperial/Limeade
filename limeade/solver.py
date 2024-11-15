@@ -32,7 +32,7 @@ class MIPMol:
     """
 
     atoms: list[str]
-    covelences: list[int]
+    covalences: list[int]
     idx_atoms: dict[int, int]
 
     @property
