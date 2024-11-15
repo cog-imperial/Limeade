@@ -1,3 +1,5 @@
+"""Initialize the MIPMol class and implement the solver for generating molecules."""
+
 import itertools
 import math
 import time
