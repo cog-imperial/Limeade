@@ -9,7 +9,7 @@ import pyomo.environ as pyo
 from gurobipy import GRB
 from rdkit import Chem
 from rdkit.Chem import AllChem, Draw
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 class MIPMol:
