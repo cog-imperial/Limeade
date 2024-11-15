@@ -36,6 +36,11 @@ class MIPMol:
     idx_atoms: dict[int, int]
 
     @property
+    def Max_valuence(self) -> int:
+        """Return the maximum valence number of all atom-types."""
+        return max(self.covalences)
+
+    @property
     def N_types(self) -> int:
         """The number of atom-types."""
         return len(self.atoms)
@@ -80,16 +85,15 @@ class MIPMol:
 
         self.idx_types = range(0, self.N_types)
         # number of neighbors for each atom, ranging from 1 to max(covalences)
-        self.N_neighbors = max(self.covalences)
-        self.idx_neighbors = range(self.N_types, self.N_types + self.N_neighbors)
+        self.idx_neighbors = range(self.N_types, self.N_types + self.Max_valuence)
         # number of hydrogens associated with each atom, ranging from 0 to max(covalences)
         self.N_hydrogens = max(self.covalences) + 1
         self.idx_hydrogens = range(
-            self.N_types + self.N_neighbors,
-            self.N_types + self.N_neighbors + self.N_hydrogens,
+            self.N_types + self.Max_valuence,
+            self.N_types + self.Max_valuence + self.N_hydrogens,
         )
         # number of features, including two features representing double bond and triple bond
-        self.N_features = self.N_types + self.N_neighbors + self.N_hydrogens + 2
+        self.N_features = self.N_types + self.Max_valuence + self.N_hydrogens + 2
         # index of double bond feature
         self.idx_double_bond = self.N_features - 2
         # index of triple bond feature
@@ -236,7 +240,7 @@ class MIPMol:
             for u in range(self.N_atoms):
                 if u != v:
                     expr += self.A[u, v]
-            for i in range(self.N_neighbors):
+            for i in range(self.Max_valuence):
                 expr -= (i + 1) * self.X[v, self.idx_neighbors[i]]
             self.add_constraint(expr, "==", name)
 
@@ -303,7 +307,7 @@ class MIPMol:
             expr = 0.0
             for i in range(self.N_types):
                 expr += self.covalences[i] * self.X[v, self.idx_types[i]]
-            for i in range(self.N_neighbors):
+            for i in range(self.Max_valuence):
                 expr -= (i + 1) * self.X[v, self.idx_neighbors[i]]
             for i in range(self.N_hydrogens):
                 expr -= i * self.X[v, self.idx_hydrogens[i]]
