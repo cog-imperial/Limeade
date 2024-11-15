@@ -13,6 +13,28 @@ from tqdm.auto import tqdm
 
 
 class MIPMol:
+    """A class for generating molecules using mixed-integer programming.
+
+    Attributes
+    ----------
+    atoms : list[str]
+        Defines the atom-types a solution molecule can have.
+    N_atoms : int
+        The number of atoms in a solution molecule.
+    covalences : list[int]
+        The default valence number of each atom-type.
+    idx_atoms : dict[int, int]
+        The index of each atom-type in `atoms`.
+
+    """
+
+    atoms: list[str]
+
+    @property
+    def N_types(self) -> int:
+        """The number of atom-types."""
+        return len(self.atoms)
+
     def __init__(self, atoms, N_atoms, language="Gurobi"):
         # only Gurobi and Pyomo are supported
         if language not in ["Gurobi", "Pyomo"]:
@@ -36,8 +58,6 @@ class MIPMol:
         for idx, atom in enumerate(self.atoms):
             self.idx_atoms.setdefault(Chem.Atom(atom).GetAtomicNum(), idx)
 
-        # number of types of atoms, indexed from 0 to len(atoms) - 1
-        self.N_types = len(self.atoms)
         self.idx_types = range(0, self.N_types)
         # number of neighbors for each atom, ranging from 1 to max(covalences)
         self.N_neighbors = max(self.covalences)
