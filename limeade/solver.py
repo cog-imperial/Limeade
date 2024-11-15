@@ -36,6 +36,16 @@ class MIPMol:
     idx_atoms: dict[int, int]
 
     @property
+    def idx_double_bond(self) -> int:
+        """Return the index for the double bond."""
+        return self.N_features - 2
+
+    @property
+    def idx_triple_bond(self) -> int:
+        """Return the index for the triple bond."""
+        return self.N_features - 1
+
+    @property
     def Max_valuence(self) -> int:
         """Return the maximum valence number of all atom-types."""
         return max(self.covalences)
@@ -102,10 +112,6 @@ class MIPMol:
             self.N_types + self.Max_valuence + self.N_hydrogens,
         )
         # number of features, including two features representing double bond and triple bond
-        # index of double bond feature
-        self.idx_double_bond = self.N_features - 2
-        # index of triple bond feature
-        self.idx_triple_bond = self.N_features - 1
 
         # define model and variables
         self.initialize_model()
