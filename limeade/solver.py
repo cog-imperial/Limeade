@@ -1,6 +1,7 @@
 import itertools
 import math
 import time
+from typing import Any, Literal
 
 import gurobipy as gp
 import numpy as np
@@ -29,14 +30,31 @@ class MIPMol:
     """
 
     atoms: list[str]
+    covelences: list[int]
+    idx_atoms: dict[int, int]
 
     @property
     def N_types(self) -> int:
         """The number of atom-types."""
         return len(self.atoms)
 
-    def __init__(self, atoms, N_atoms, language="Gurobi"):
-        # only Gurobi and Pyomo are supported
+    def __init__(
+        self,
+        atoms: list[str],
+        N_atoms: int,
+        language: Literal["Gurobi", "Pyomo"] = "Gurobi",
+    ):
+        """Initialize the MIPMol class.
+
+        Parameters
+        ----------
+        atoms : list[str]
+            Defines the atom-types a solution molecule can have.
+        N_atoms : int
+            The number of atoms in a solution molecule.
+        language : Literal["Gurobi", "Pyomo"], default="Gurobi"
+            The modeling language to use, by default "Gurobi".
+        """
         if language not in ["Gurobi", "Pyomo"]:
             raise ValueError(f"Modeling language {language} is not supported.")
         self.language = language
@@ -87,7 +105,7 @@ class MIPMol:
         self.check_later = []
 
     # initialize model with dummy objective and variables for features
-    def initialize_model(self):
+    def initialize_model(self) -> None:
         # create model and set objective as 0
         if self.language == "Gurobi":
             self.m = gp.Model()
@@ -105,8 +123,9 @@ class MIPMol:
         self.add_variable([N, N], "TB")
 
     # add variable given shape and name
-    def add_variable(self, shape, name):
-        assert len(shape) in [1, 2]
+    def add_variable(self, shape: list[int], name: str) -> None:
+        if len(shape) not in [1, 2]:
+            raise ValueError("The shape of a variable should be either 1D or 2D.")
         if self.language == "Gurobi":
             if len(shape) == 1:
                 setattr(
@@ -131,7 +150,7 @@ class MIPMol:
 
     # add constraint given the expression and sense (<= or ==)
     # for gurobi, we also include the name of this constraint for later use if the model is infeasible
-    def add_constraint(self, expr, sense, name):
+    def add_constraint(self, expr, sense, name) -> None:
         if self.language == "Gurobi":
             if sense == "==":
                 self.m.addConstr(expr == 0, name=name)
@@ -144,7 +163,7 @@ class MIPMol:
                 self.m.Con.add(expr <= 0)
 
     # basic constraints for structural feasibility
-    def structural_feasibility(self):
+    def structural_feasibility(self) -> None:
         name = "structural feasibility"
 
         # (C1): assume that each atom exists
@@ -295,7 +314,7 @@ class MIPMol:
             self.add_constraint(expr, "==", name)
 
     # (C20): set bounds for each type of atom
-    def bounds_atoms(self, lb, ub):
+    def bounds_atoms(self, lb: int | None, ub: int | None) -> None:
         for i in range(self.N_types):
             expr = 0.0
             for v in range(self.N_atoms):
@@ -310,7 +329,7 @@ class MIPMol:
                 )
 
     # (C21): set bounds for number of double bonds
-    def bounds_double_bonds(self, lb_db=None, ub_db=None):
+    def bounds_double_bonds(self, lb_db: int | None = None, ub_db: int | None = None) -> None:
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -321,7 +340,7 @@ class MIPMol:
             self.add_constraint(expr - ub_db, "<=", name="upper bound of double bonds")
 
     # (C22): set bounds for number of triple bonds
-    def bounds_triple_bonds(self, lb_tb=None, ub_tb=None):
+    def bounds_triple_bonds(self, lb_tb: int | None = None, ub_tb: int | None = None) -> None:
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -332,7 +351,7 @@ class MIPMol:
             self.add_constraint(expr - ub_tb, "<=", name="upper bound of triple bonds")
 
     # (C23): set bounds for number of rings
-    def bounds_rings(self, lb_ring=None, ub_ring=None):
+    def bounds_rings(self, lb_ring: int | None = None, ub_ring: int | None = None) -> None:
         expr = -(self.N_atoms - 1)
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -343,7 +362,7 @@ class MIPMol:
             self.add_constraint(expr - ub_ring, "<=", name="upper bound of rings")
 
     # extract atom/bond/(explicit)hydrogen/degree information for a SMARTS string
-    def substructure_parser(self, substructure):
+    def substructure_parser(self, substructure: str) -> tuple[list[list[int]], list[list[int]], list[int], list[int]]:
         atom_list = []
         bond_list = []
         hydrogen_list = []
@@ -382,7 +401,7 @@ class MIPMol:
         return atom_list, bond_list, hydrogen_list, degree_list
 
     # exclude given substructures
-    def exclude_substructures(self, substructures):
+    def exclude_substructures(self, substructures: list[str]) -> None:
         for substructure in substructures:
             atom_list, bond_list, hydrogen_list, degree_list = self.substructure_parser(
                 substructure
@@ -433,7 +452,7 @@ class MIPMol:
                 self.add_constraint(expr, "<=", name=f"exclude {substructure}")
 
     # include given substructures
-    def include_substructures(self, substructures):
+    def include_substructures(self, substructures: list[str]) -> None:
         for substructure in substructures:
             atom_list, bond_list, hydrogen_list, degree_list = self.substructure_parser(
                 substructure
@@ -497,7 +516,7 @@ class MIPMol:
     # validation stage, remove:
     # (i) duplicated molecules, and
     # (ii) molecules with substructures in self.check_later
-    def validate(self, mols):
+    def validate(self, mols: list[Chem.Mol]) -> list[Chem.Mol]:
         valid_mols = []
         uni_smiles = {}
         for mol in mols:
@@ -519,7 +538,7 @@ class MIPMol:
         return valid_mols
 
     # generate solutions within time limit for each batch using Gurobi
-    def solve(self, NumSolutions, BatchSize=100, TimeLimit=600):
+    def solve(self, NumSolutions: int, BatchSize: int = 100, TimeLimit: int = 600) -> list[Chem.Mol]:
         if self.language != "Gurobi":
             raise ValueError(
                 "Please use self.solve_pyomo when the modeling language is Pyomo."
@@ -592,12 +611,13 @@ class MIPMol:
 
     # generate solutions within time limit for each batch using Pyomo specified a solver
     def solve_pyomo(
-        self, NumSolutions, BatchSize=100, solver="cplex_direct", solver_options={}
+        self, NumSolutions: int, BatchSize: int = 100, solver: int = "cplex_direct", solver_options: dict[str, Any] | None=None
     ):
         if self.language != "Pyomo":
             raise ValueError(
                 "Please use self.solve when the modeling language is Gurobi."
             )
+        solver_options = solver_options or {}
         tic = time.time()
         mols = []
         # number of batches needed
