@@ -41,6 +41,11 @@ class MIPMol:
         return max(self.covalences)
 
     @property
+    def N_features(self) -> int:
+        """Return the number of features."""
+        return self.N_types + self.Max_valuence + self.N_hydrogens + 2
+
+    @property
     def N_hydrogens(self) -> int:
         """Return the number of hydrogen types."""
         return self.Max_valuence + 1
@@ -97,7 +102,6 @@ class MIPMol:
             self.N_types + self.Max_valuence + self.N_hydrogens,
         )
         # number of features, including two features representing double bond and triple bond
-        self.N_features = self.N_types + self.Max_valuence + self.N_hydrogens + 2
         # index of double bond feature
         self.idx_double_bond = self.N_features - 2
         # index of triple bond feature
