@@ -42,7 +42,7 @@ class MIPMol:
 
     @property
     def N_types(self) -> int:
-        """The number of atom-types."""
+        """Return the number of atom-types."""
         return len(self.atoms)
 
     def __init__(
