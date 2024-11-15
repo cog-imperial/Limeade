@@ -41,6 +41,11 @@ class MIPMol:
         return max(self.covalences)
 
     @property
+    def N_hydrogens(self) -> int:
+        """Return the number of hydrogen types."""
+        return self.Max_valuence + 1
+
+    @property
     def N_types(self) -> int:
         """Return the number of atom-types."""
         return len(self.atoms)
@@ -87,7 +92,6 @@ class MIPMol:
         # number of neighbors for each atom, ranging from 1 to max(covalences)
         self.idx_neighbors = range(self.N_types, self.N_types + self.Max_valuence)
         # number of hydrogens associated with each atom, ranging from 0 to max(covalences)
-        self.N_hydrogens = max(self.covalences) + 1
         self.idx_hydrogens = range(
             self.N_types + self.Max_valuence,
             self.N_types + self.Max_valuence + self.N_hydrogens,
