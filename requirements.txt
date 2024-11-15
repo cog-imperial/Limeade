@@ -1,2 +1,5 @@
 gurobipy
+numpy
 pyomo
+rdkit
+tqdm
