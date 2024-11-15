@@ -349,7 +349,9 @@ class MIPMol:
                 )
 
     # (C21): set bounds for number of double bonds
-    def bounds_double_bonds(self, lb_db: int | None = None, ub_db: int | None = None) -> None:
+    def bounds_double_bonds(
+        self, lb_db: int | None = None, ub_db: int | None = None
+    ) -> None:
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -360,7 +362,9 @@ class MIPMol:
             self.add_constraint(expr - ub_db, "<=", name="upper bound of double bonds")
 
     # (C22): set bounds for number of triple bonds
-    def bounds_triple_bonds(self, lb_tb: int | None = None, ub_tb: int | None = None) -> None:
+    def bounds_triple_bonds(
+        self, lb_tb: int | None = None, ub_tb: int | None = None
+    ) -> None:
         expr = 0.0
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -371,7 +375,9 @@ class MIPMol:
             self.add_constraint(expr - ub_tb, "<=", name="upper bound of triple bonds")
 
     # (C23): set bounds for number of rings
-    def bounds_rings(self, lb_ring: int | None = None, ub_ring: int | None = None) -> None:
+    def bounds_rings(
+        self, lb_ring: int | None = None, ub_ring: int | None = None
+    ) -> None:
         expr = -(self.N_atoms - 1)
         for u in range(self.N_atoms):
             for v in range(u + 1, self.N_atoms):
@@ -382,7 +388,9 @@ class MIPMol:
             self.add_constraint(expr - ub_ring, "<=", name="upper bound of rings")
 
     # extract atom/bond/(explicit)hydrogen/degree information for a SMARTS string
-    def substructure_parser(self, substructure: str) -> tuple[list[list[int]], list[list[int]], list[int], list[int]]:
+    def substructure_parser(
+        self, substructure: str
+    ) -> tuple[list[list[int]], list[list[int]], list[int], list[int]]:
         atom_list = []
         bond_list = []
         hydrogen_list = []
@@ -558,7 +566,9 @@ class MIPMol:
         return valid_mols
 
     # generate solutions within time limit for each batch using Gurobi
-    def solve(self, NumSolutions: int, BatchSize: int = 100, TimeLimit: int = 600) -> list[Chem.Mol]:
+    def solve(
+        self, NumSolutions: int, BatchSize: int = 100, TimeLimit: int = 600
+    ) -> list[Chem.Mol]:
         if self.language != "Gurobi":
             raise ValueError(
                 "Please use self.solve_pyomo when the modeling language is Pyomo."
@@ -631,7 +641,11 @@ class MIPMol:
 
     # generate solutions within time limit for each batch using Pyomo specified a solver
     def solve_pyomo(
-        self, NumSolutions: int, BatchSize: int = 100, solver: int = "cplex_direct", solver_options: dict[str, Any] | None=None
+        self,
+        NumSolutions: int,
+        BatchSize: int = 100,
+        solver: int = "cplex_direct",
+        solver_options: dict[str, Any] | None = None,
     ):
         if self.language != "Pyomo":
             raise ValueError(
