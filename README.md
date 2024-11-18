@@ -5,11 +5,22 @@ This repository is the official implementation of the paper “Limeade: Let inte
 ## Documentation
 Most functionalities are demonstrated using Jupyter notebooks available in the notebooks folder.
 
+## Requirements
+
+To install requirements:
+
+```setup
+pip install -r requirements.txt
+```
+
+*Limeade* relies on *Gurobi* to generate feasible solutions as default. A license is needed to use *Gurobi*. Please follow the instructions to obtain a [free academic license](https://www.gurobi.com/academia/academic-program-and-licenses/). *Limeade* also proves a *Pyomo* version (with *CPLEX* as default) so that the users could use open-sourced solvers.
+
 
 ## Basic settings
 To generate molecules with `N` atoms choosing from atom list `atoms`, run this command (use `N=10` and `atoms=["C", "N", "O", "S"]` as an example):
 
 ```
+from limeade import MIPMol
 Mol = MIPMol(atoms=["C", "N", "O", "S"], N_atoms=10)
 ```
 

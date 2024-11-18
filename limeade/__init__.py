@@ -1,5 +1,5 @@
 """Initialize the Limeade package."""
 
-from limeade.MIPMol import MIPMol
+from limeade.main import MIPMol
 
 __all__ = ["MIPMol"]
