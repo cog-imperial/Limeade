@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+dynamic = ["dependencies"]
+name = "limeade"
+authors = [
+    {name = "Shiqiang Zhang"},
+    {name = "Christian W. Feldmann"},
+    {name = "Frederik Sandfort"},
+    {name = "Miriam Mathea"},
+    {name = "Juan S. Campos"},
+    {name = "Ruth Misener"}
+]
+description = "A framework for generating molecules using mixed-integer programming (MIP)."
+version = "0.1.0"
+readme = "README.md"
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+
+[tool.setuptools.packages.find]
+exclude = ["data", "docs", "notebooks", "tests"]
+
+[tool.setuptools.package-data]
+"limeade" = ["py.typed"]

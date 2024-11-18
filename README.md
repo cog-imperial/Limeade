@@ -1,4 +1,4 @@
-<img src="Limeade\Limeade_logo.png" width=80%>
+<img src="docs/figures/Limeade_logo.png" width=80%>
 
 This repository is the official implementation of the paper “Limeade: Let integer molecular encoding aid”.
 
