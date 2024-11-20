@@ -57,6 +57,6 @@ mols = Mol.solve(NumSolutions)
 where `NumSolutions` is the number of generated molecules.
 
 ## Contributors
-[*Shiqiang Zhang*](https://github.com/zshiqiang). Funded by BASF SE Ludwigshafen am Rhei.
+[*Shiqiang Zhang*](https://github.com/zshiqiang). Funded by an Imperial College Hans Rausing Scholarship and BASF SE Ludwigshafen am Rhein.
 
-[*Christian Feldmann*](https://github.com/c-w-feldmann). Funded by BASF SE Ludwigshafen am Rhei.
+[*Christian Feldmann*](https://github.com/c-w-feldmann). Funded by BASF SE Ludwigshafen am Rhein.
