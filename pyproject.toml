@@ -14,14 +14,14 @@ authors = [
     {name = "Ruth Misener"}
 ]
 description = "A framework for generating molecules using mixed-integer programming (MIP)."
-version = "0.1.0"
+version = "1.0"
 readme = "README.md"
 
 [tool.setuptools.dynamic]
 dependencies = {file = "requirements.txt"}
 
 [tool.setuptools.packages.find]
-exclude = ["data", "docs", "notebooks", "tests"]
+exclude = ["docs"]
 
 [tool.setuptools.package-data]
 "limeade" = ["py.typed"]
