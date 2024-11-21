@@ -1,5 +1,5 @@
-gurobipy
-numpy
-pyomo
-rdkit
-tqdm
+gurobipy==11.0.0
+numpy==2.1.3
+pyomo==6.8.1
+rdkit==2024.3.6
+tqdm==4.67.0
