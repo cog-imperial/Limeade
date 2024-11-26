@@ -1,6 +1,18 @@
 <img src="docs/figures/Limeade_logo.png" width=80%>
 
-This repository is the official implementation of the paper “Limeade: Let integer molecular encoding aid”.
+This repository is the official implementation of the paper “Limeade: Let integer molecular encoding aid”. Please cite as:
+
+- Shiqiang Zhang, Christian W. Feldmann, Frederik Sandfort, Miriam Mathea, Juan S. Campos, Ruth Misener. "Limeade: Let integer molecular encoding aid." arXiv preprint arXiv:2411.16623 (2024).
+
+The BibTex reference is:
+
+     @article{zhang2024limeade,
+          title = {Limeade: Let integer molecular encoding aid},
+          author= {Shiqiang Zhang and Christian W. Feldmann and Frederik Sandfort and Miriam Mathea and Juan S. Campos and Ruth Misener},
+          journal = {arXiv preprint arXiv:2411.16623},
+          year = {2024},
+     }
+
 
 ## Documentation
 Most functionalities are demonstrated using Jupyter notebooks available in the notebooks folder.
